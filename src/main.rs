@@ -4,7 +4,7 @@
 use std::iter;
 
 use cgmath::{prelude::*, Vector3};
-use wgpu::util::DeviceExt;
+use wgpu::{util::DeviceExt, Color};
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
@@ -19,6 +19,13 @@ mod quad;
 mod block;
 mod texture;
 mod block_types;
+
+const BG_COLOR: Color = Color {
+    r: 0.2,
+    g: 0.55,
+    b: 0.65,
+    a: 1.0,
+};
 
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub enum Direction {
@@ -275,33 +282,32 @@ impl State {
         let size = window.inner_size();
 
         let chunk = &[
-            Block::new(1, Vector3::new(0.0, 0.0, 0.0), 0),
-            Block::new(0, Vector3::new(1.0, 2.0, 0.0), 1),
-            Block::new(2, Vector3::new(2.0, 1.0, -1.0), 2),
-            Block::new(3, Vector3::new(-1.0, 2.0, 1.0), 3),
-            Block::new(3, Vector3::new(1.0, -3.0, 2.0), 4),
+            Block::new(1, Vector3::new(0, 0, 0), 0),
+            Block::new(0, Vector3::new(1, 2, 0), 1),
+            Block::new(2, Vector3::new(2, 1, -1), 2),
+            Block::new(3, Vector3::new(-1, 2, 1), 3),
+            Block::new(3, Vector3::new(1, -3, 2), 4),
         ];
 
-        let mut verticies: Vec<Vertex> = Vec::new();
+        let mut vertices: Vec<Vertex> = Vec::new();
         let mut indices: Vec<u16> = Vec::new();
 
         for i in 0..chunk.len() {
             let block = &chunk[i];
             for quad in block.get_mesh().iter() {
-                verticies.push(quad.get_verticies()[0]);
-                verticies.push(quad.get_verticies()[1]);
-                verticies.push(quad.get_verticies()[2]);
-                verticies.push(quad.get_verticies()[3]);
+                vertices.push(quad.get_vertices()[0]);
+                vertices.push(quad.get_vertices()[1]);
+                vertices.push(quad.get_vertices()[2]);
+                vertices.push(quad.get_vertices()[3]);
     
-                indices.push(quad.get_indices()[0] + (i as u16 * 4));
-                indices.push(quad.get_indices()[1] + (i as u16 * 4));
-                indices.push(quad.get_indices()[2] + (i as u16 * 4));
-                indices.push(quad.get_indices()[3] + (i as u16 * 4));
-                indices.push(quad.get_indices()[4] + (i as u16 * 4));
-                indices.push(quad.get_indices()[5] + (i as u16 * 4));
+                indices.push(quad.get_indices()[0] as u16 + (i as u16 * 4));
+                indices.push(quad.get_indices()[1] as u16 + (i as u16 * 4));
+                indices.push(quad.get_indices()[2] as u16 + (i as u16 * 4));
+                indices.push(quad.get_indices()[3] as u16 + (i as u16 * 4));
+                indices.push(quad.get_indices()[4] as u16 + (i as u16 * 4));
+                indices.push(quad.get_indices()[5] as u16 + (i as u16 * 4));
             }
         }
-
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
         let instance = wgpu::Instance::new(wgpu::Backends::all());
@@ -520,7 +526,7 @@ impl State {
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&verticies),
+            contents: bytemuck::cast_slice(&vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -599,12 +605,7 @@ impl State {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(BG_COLOR),
                         store: true,
                     },
                 }],
