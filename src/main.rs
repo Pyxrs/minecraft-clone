@@ -1,4 +1,5 @@
 #![feature(const_fn_floating_point_arithmetic)]
+#![feature(once_cell)]
 
 use std::iter;
 
@@ -9,39 +10,18 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
 };
+use crate::vertex::Vertex;
+use crate::quad::Quad;
+use crate::block::Block;
 
+mod vertex;
+mod quad;
+mod block;
 mod texture;
+mod block_types;
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    tex_coords: [f32; 2],
-}
-
-impl Vertex {
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
-        use std::mem;
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-            ],
-        }
-    }
-}
-
-enum Direction {
+#[derive(Hash, Eq, PartialEq, Debug)]
+pub enum Direction {
     UP,
     DOWN,
     NORTH,
@@ -49,83 +29,6 @@ enum Direction {
     SOUTH,
     EAST
 }
-
-const fn quad(index: u16, direction: Direction, position: [f32; 3]) -> ([Vertex; 4], [u16; 6]) {
-    let indices_f = [0 + index, 1 + index, 2 + index, 2 + index, 1 + index, 3 + index];
-    let indices_b = [2 + index, 1 + index, 0 + index, 3 + index, 1 + index, 2 + index];
-    let verticies_ud = [
-        Vertex {
-            position: [-0.5 + position[0], position[1], 0.5 + position[2]],
-            tex_coords: [0.0, 1.0],
-        }, // A
-        Vertex {
-            position: [0.5 + position[0], position[1], 0.5 + position[2]],
-            tex_coords: [1.0, 1.0],
-        }, // B
-        Vertex {
-            position: [-0.5 + position[0], position[1], -0.5 + position[2]],
-            tex_coords: [0.0, 0.0],
-        }, // C
-        Vertex {
-            position: [0.5 + position[0], position[1], -0.5 + position[2]],
-            tex_coords: [1.0, 0.0],
-        }, // D
-    ];
-    let verticies_ns = [
-        Vertex {
-            position: [-0.5 + position[0], 0.5 + position[1], position[2]],
-            tex_coords: [1.0, 0.0],
-        }, // A
-        Vertex {
-            position: [0.5 + position[0], 0.5 + position[1], position[2]],
-            tex_coords: [0.0, 0.0],
-        }, // B
-        Vertex {
-            position: [-0.5 + position[0], -0.5 + position[1], position[2]],
-            tex_coords: [1.0, 1.0],
-        }, // C
-        Vertex {
-            position: [0.5 + position[0], -0.5 + position[1], position[2]],
-            tex_coords: [0.0, 1.0],
-        }, // D
-    ];
-    let verticies_we = [
-        Vertex {
-            position: [position[0], 0.5 + position[1], -0.5 + position[2]],
-            tex_coords: [1.0, 0.0],
-        }, // A
-        Vertex {
-            position: [position[0], 0.5 + position[1], 0.5 + position[2]],
-            tex_coords: [0.0, 0.0],
-        }, // B
-        Vertex {
-            position: [position[0], -0.5 + position[1], -0.5 + position[2]],
-            tex_coords: [1.0, 1.0],
-        }, // C
-        Vertex {
-            position: [position[0], -0.5 + position[1], 0.5 + position[2]],
-            tex_coords: [0.0, 1.0],
-        }, // D
-    ];
-
-    match direction {
-        Direction::UP => (verticies_ud, indices_f),
-        Direction::DOWN => (verticies_ud, indices_b),
-        Direction::NORTH => (verticies_ns, indices_f),
-        Direction::SOUTH => (verticies_ns, indices_b),
-        Direction::WEST => (verticies_we, indices_f),
-        Direction::EAST => (verticies_we, indices_b),
-    }
-}
-
-const QUADS: [([Vertex; 4], [u16; 6]); 6] = [
-    quad(0, Direction::UP,  [0.0, 0.5, 0.0]),
-    quad(4, Direction::DOWN,  [0.0, -0.5, 0.0]),
-    quad(8, Direction::NORTH, [0.0, 0.0, -0.5]),
-    quad(12, Direction::SOUTH, [0.0, 0.0, 0.5]),
-    quad(16, Direction::WEST, [0.5, 0.0, 0.0]),
-    quad(20, Direction::EAST, [-0.5, 0.0, 0.0]),
-];
 
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
@@ -371,20 +274,32 @@ impl State {
     async fn new(window: &Window) -> Self {
         let size = window.inner_size();
 
+        let chunk = &[
+            Block::new(1, Vector3::new(0.0, 0.0, 0.0), 0),
+            Block::new(0, Vector3::new(1.0, 2.0, 0.0), 1),
+            Block::new(2, Vector3::new(2.0, 1.0, -1.0), 2),
+            Block::new(3, Vector3::new(-1.0, 2.0, 1.0), 3),
+            Block::new(3, Vector3::new(1.0, -3.0, 2.0), 4),
+        ];
+
         let mut verticies: Vec<Vertex> = Vec::new();
         let mut indices: Vec<u16> = Vec::new();
-        for quad in QUADS.iter() {
-            verticies.push(quad.0[0]);
-            verticies.push(quad.0[1]);
-            verticies.push(quad.0[2]);
-            verticies.push(quad.0[3]);
 
-            indices.push(quad.1[0]);
-            indices.push(quad.1[1]);
-            indices.push(quad.1[2]);
-            indices.push(quad.1[3]);
-            indices.push(quad.1[4]);
-            indices.push(quad.1[5]);
+        for i in 0..chunk.len() {
+            let block = &chunk[i];
+            for quad in block.get_mesh().iter() {
+                verticies.push(quad.get_verticies()[0]);
+                verticies.push(quad.get_verticies()[1]);
+                verticies.push(quad.get_verticies()[2]);
+                verticies.push(quad.get_verticies()[3]);
+    
+                indices.push(quad.get_indices()[0] + (i as u16 * 4));
+                indices.push(quad.get_indices()[1] + (i as u16 * 4));
+                indices.push(quad.get_indices()[2] + (i as u16 * 4));
+                indices.push(quad.get_indices()[3] + (i as u16 * 4));
+                indices.push(quad.get_indices()[4] + (i as u16 * 4));
+                indices.push(quad.get_indices()[5] + (i as u16 * 4));
+            }
         }
 
         // The instance is a handle to our GPU
@@ -420,9 +335,9 @@ impl State {
         };
         surface.configure(&device, &config);
 
-        let diffuse_bytes = include_bytes!("grass_top.png");
+        let diffuse_bytes = include_bytes!("assets/textures.png");
         let diffuse_texture =
-            texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "grass_top.png").unwrap();
+            texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "assets/textures.png").unwrap();
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -720,6 +635,8 @@ impl State {
 }
 
 fn main() {
+    block_types::init();
+
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
