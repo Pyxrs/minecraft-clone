@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::str;
 
 use once_cell::sync::OnceCell;
+use taplo::parser::parse;
 
 use crate::Direction;
 
@@ -14,6 +16,17 @@ pub struct Type<'a> {
 }
 
 pub fn init() {
+    
+    let parse_result = parse(str::from_utf8(include_bytes!("assets/blocks.toml")).unwrap());
+    assert!(parse_result.errors.is_empty());
+
+    let root_node = parse_result.into_dom();
+    assert_eq!(root_node.errors().len(), 0);
+
+    for node in root_node.iter() {
+        println!("{:?}", node.0);
+    }
+
     match BLOCK_TYPES.set([
 
         // ==========
