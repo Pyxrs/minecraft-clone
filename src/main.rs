@@ -37,6 +37,29 @@ pub enum Direction {
     EAST
 }
 
+impl Direction {
+    pub fn get_vec(&self) -> Vector3<i8> {
+        match self {
+            Direction::UP => Vector3::new(0, 1, 0),
+            Direction::DOWN => Vector3::new(0, -1, 0),
+            Direction::NORTH => Vector3::new(0, 0, -1),
+            Direction::SOUTH => Vector3::new(0, 0, 1),
+            Direction::WEST => Vector3::new(1, 0, 0),
+            Direction::EAST => Vector3::new(-1, 0, 0),
+        }
+    }
+    pub fn get_id(&self) -> u8 {
+        match self {
+            Direction::UP => 0,
+            Direction::DOWN => 1,
+            Direction::NORTH => 2,
+            Direction::SOUTH => 3,
+            Direction::WEST => 4,
+            Direction::EAST => 5,
+        }
+    }
+}
+
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
     1.0, 0.0, 0.0, 0.0,
@@ -210,8 +233,8 @@ impl State {
     async fn new(window: &Window) -> Self {
         let size = window.inner_size();
         
-        let chunk = Chunk::new(Vector3::new(0, 0, 0));
-        let (vertices, indices) = chunk.build();
+        let mut chunk = Chunk::new(Vector3::new(0, 0, 0));
+        let (vertices, indices) = chunk.render();
 
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
@@ -505,8 +528,6 @@ impl State {
 }
 
 fn main() {
-    block_types::init();
-
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 

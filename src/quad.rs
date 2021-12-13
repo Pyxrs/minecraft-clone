@@ -47,7 +47,8 @@ impl Quad {
 }
 
 fn calc_quad(id: u16, index: u16, direction: &Direction, position: Vector3<f32>) -> ([Vertex; 4], [u16; 6]) {
-    let text_id = crate::block_types::BLOCK_TYPES.get().unwrap()[id as usize].texture_ids.get(direction).unwrap();
+    let block_type = crate::block_types::get(id);
+    let text_id = block_type.texture_ids.get(direction).unwrap();
     let text_0: f32 = TEXTURE_INCREMENT * *text_id as f32;
     let text_1: f32 = TEXTURE_INCREMENT * (text_id + 1) as f32;
 
