@@ -1,13 +1,11 @@
 
 use cgmath::Vector3;
-use rand::Rng;
-use try_catch::catch;
 
 use crate::vertex::Vertex;
 use crate::block::Block;
-use crate::{block_types, Direction};
+use crate::block_types;
 
-const SIZE: usize = 8;
+const SIZE: usize = 16;
 
 pub struct Chunk {
     pos: Vector3<i16>,
@@ -22,11 +20,9 @@ impl Chunk {
         }
     }
 
-    pub fn render(&mut self) -> (Vec<Vertex>, Vec<u16>) {
-        let mut rng = rand::thread_rng();
-
+    pub fn render(&mut self) -> (Vec<Vertex>, Vec<u32>) {
         let mut vertices: Vec<Vertex> = Vec::new();
-        let mut indices: Vec<u16> = Vec::new();
+        let mut indices: Vec<u32> = Vec::new();
         for locx in 0..(self.blocks.len()) {
             for locy in 0..(self.blocks[locx].len()) {
                 for locz in 0..(self.blocks[locy].len()) {
@@ -36,17 +32,8 @@ impl Chunk {
                     let offset = index(Vector3::new(locx as u32, locy as u32, locz as u32));
                     if block.get_id() != 0 {
                         for quad in block.render(self.get_glo_pos(Vector3::new(locx as u8, locy as u8, locz as u8)), offset).iter() {
-                            if quad.get_direction().get_id() == 1 && is_on_edge(Vector3::new(locx as u8, locy as u8, locz as u8), quad.get_direction().get_id()) {
-                                vertices.extend(quad.get_vertices().iter());
-                                indices.extend(quad.get_indices(offset).iter());
-                            } else {
-                                //let vec = quad.get_direction().get_vec();
-                                //let faced_block = self.blocks[(locx as i8 + vec.x) as usize][(locy as i8 + vec.y) as usize][(locz as i8 + vec.z) as usize];
-                                //if faced_block.get_id() == 0 {
-                                    //vertices.extend(quad.get_vertices().iter());
-                                    //indices.extend(quad.get_indices(offset).iter());
-                                //}
-                            }
+                            vertices.extend(quad.get_vertices().iter());
+                            indices.extend(quad.get_indices(offset).iter());
                         }
                     }
                 }
@@ -76,10 +63,6 @@ fn is_on_edge(pos: Vector3<u8>, direction: u8) -> bool {
     //false
 }
 
-fn index(pos: Vector3<u32>) -> u16 {
-    let index = (pos.x * (SIZE * SIZE) as u32) + (pos.y * SIZE as u32) + pos.z;
-    if index >= 65535 {
-        panic!("Chunk size too big! Exceeded buffer limit");
-    }
-    index as u16
+fn index(pos: Vector3<u32>) -> u32 {
+    (pos.x * (SIZE * SIZE) as u32) + (pos.y * SIZE as u32) + pos.z
 }

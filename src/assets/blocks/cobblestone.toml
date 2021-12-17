@@ -1,0 +1,7 @@
+name = "cobblestone"
+id = 4
+textures = { up = 4, down = 4, north = 4, south = 4, west = 4, east = 4 }
+
+states = [
+    { type = "rotation", axis = "xyz", placement = -1 }
+]

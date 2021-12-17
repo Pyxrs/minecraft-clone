@@ -1,0 +1,6 @@
+name = "air"
+id = 0
+textures = { up = 0, down = 0, north = 0, south = 0, west = 0, east = 0 }
+
+states = [
+]

@@ -1,7 +1,7 @@
 #![feature(const_fn_floating_point_arithmetic)]
 #![feature(once_cell)]
 
-use std::iter;
+use std::{iter, fmt};
 use cgmath::{prelude::*, Vector3};
 use wgpu::{util::DeviceExt, Color};
 use winit::{
@@ -56,6 +56,16 @@ impl Direction {
             Direction::SOUTH => 3,
             Direction::WEST => 4,
             Direction::EAST => 5,
+        }
+    }
+    pub fn get_string(&self) -> String {
+        match self {
+            Direction::UP => String::from("up"),
+            Direction::DOWN => String::from("down"),
+            Direction::NORTH => String::from("north"),
+            Direction::SOUTH => String::from("south"),
+            Direction::WEST => String::from("west"),
+            Direction::EAST => String::from("east"),
         }
     }
 }
@@ -516,7 +526,7 @@ impl State {
             render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
             render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
 
@@ -528,6 +538,8 @@ impl State {
 }
 
 fn main() {
+    block_types::init();
+
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 

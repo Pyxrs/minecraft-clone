@@ -10,11 +10,11 @@ pub struct Quad {
     position: Vector3<f32>,
     direction: Direction,
     vertices: [Vertex; 4],
-    indices: [u16; 6]
+    indices: [u32; 6]
 }
 
 impl Quad {
-    pub fn new(texture_id: u16, direction: Direction, position: Vector3<f32>, index_offset: u16) -> Quad {
+    pub fn new(texture_id: u16, direction: Direction, position: Vector3<f32>, index_offset: u32) -> Quad {
         let calculations = calc_quad(texture_id, index_offset, &direction, position);
         Quad {
             texture_id,
@@ -37,7 +37,7 @@ impl Quad {
         &self.vertices
     }
 
-    pub fn get_indices(&self, offset: u16) -> [u16; 6] {
+    pub fn get_indices(&self, offset: u32) -> [u32; 6] {
         let mut indices = self.indices.clone();
         for i in 0..indices.len() {
             indices[i] = indices[i] + offset * 4;
@@ -46,10 +46,10 @@ impl Quad {
     }
 }
 
-fn calc_quad(id: u16, index: u16, direction: &Direction, position: Vector3<f32>) -> ([Vertex; 4], [u16; 6]) {
+fn calc_quad(id: u16, index: u32, direction: &Direction, position: Vector3<f32>) -> ([Vertex; 4], [u32; 6]) {
     let block_type = crate::block_types::get(id);
-    let text_id = block_type.texture_ids.get(direction).unwrap();
-    let text_0: f32 = TEXTURE_INCREMENT * *text_id as f32;
+    let text_id = block_type.get_texture(direction);
+    let text_0: f32 = TEXTURE_INCREMENT * text_id as f32;
     let text_1: f32 = TEXTURE_INCREMENT * (text_id + 1) as f32;
 
     let indices_f = [0 + index, 1 + index, 2 + index, 2 + index, 1 + index, 3 + index];

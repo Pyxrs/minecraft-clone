@@ -1,0 +1,7 @@
+name = "dirt"
+id = 2
+textures = { up = 2, down = 2, north = 2, south = 2, west = 2, east = 2 }
+
+states = [
+    { type = "rotation", axis = "xyz", placement = -1 }
+]

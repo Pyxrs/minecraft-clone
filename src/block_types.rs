@@ -1,99 +1,46 @@
-use std::collections::HashMap;
-
-use strum::IntoEnumIterator;
-use strum_macros::EnumIter;
+use serde_derive::Deserialize;
+use toml::value::{Table, Array};
+use once_cell::sync::OnceCell;
+use std::{fs, slice::SliceIndex};
 
 use crate::Direction;
 
-#[derive(Debug, EnumIter)]
-enum Types {
-    AIR,
-    GRASS,
-    DIRT,
-    STONE,
-    COBBLESTONE,
-}
+pub static BLOCK_TYPES: OnceCell<Vec<Type>> = OnceCell::new();
 
-#[derive(Debug)]
+#[derive(Deserialize, Debug)]
 pub struct Type {
     pub name: String,
     pub id: u16,
-    pub texture_ids: HashMap<Direction, u16>,
+    textures: Table,
+    pub states: Array
 }
 
-impl Types {
-    pub fn get(&self) -> Type {
-        match self {
-            Types::AIR => Type {
-                name: String::from("air"),
-                id: 0,
-                texture_ids: HashMap::from([
-                    (Direction::UP,     0),
-                    (Direction::DOWN,   0),
-                    (Direction::NORTH,  0),
-                    (Direction::SOUTH,  0),
-                    (Direction::WEST,   0),
-                    (Direction::EAST,   0),
-                ]),
-            },
-            Types::GRASS => Type {
-                name: String::from("grass"),
-                id: 1,
-                texture_ids: HashMap::from([
-                    (Direction::UP,     1),
-                    (Direction::DOWN,   2),
-                    (Direction::NORTH,  0),
-                    (Direction::SOUTH,  0),
-                    (Direction::WEST,   0),
-                    (Direction::EAST,   0),
-                ]),
-            },
-            Types::DIRT => Type {
-                name: String::from("dirt"),
-                id: 2,
-                texture_ids: HashMap::from([
-                    (Direction::UP,     2),
-                    (Direction::DOWN,   2),
-                    (Direction::NORTH,  2),
-                    (Direction::SOUTH,  2),
-                    (Direction::WEST,   2),
-                    (Direction::EAST,   2),
-                ]),
-            },
-            Types::STONE => Type {
-                name: String::from("stone"),
-                id: 3,
-                texture_ids: HashMap::from([
-                    (Direction::UP,     3),
-                    (Direction::DOWN,   3),
-                    (Direction::NORTH,  3),
-                    (Direction::SOUTH,  3),
-                    (Direction::WEST,   3),
-                    (Direction::EAST,   3),
-                ]),
-            },
-            Types::COBBLESTONE => Type {
-                name: String::from("cobblestone"),
-                id: 4,
-                texture_ids: HashMap::from([
-                    (Direction::UP,     4),
-                    (Direction::DOWN,   4),
-                    (Direction::NORTH,  4),
-                    (Direction::SOUTH,  4),
-                    (Direction::WEST,   4),
-                    (Direction::EAST,   4),
-                ]),
-            },
-        }
+impl Type {
+    pub fn get_texture(&self, direction: &Direction) -> u16 {
+        self.textures.get(&direction.get_string()).unwrap().as_integer().unwrap() as u16
     }
 }
 
-pub fn get(id: u16) -> Type {
-    for block_type in Types::iter() {
-        let the_type = block_type.get();
-        if (block_type as u16) == id {
-            return the_type;
+pub fn init() {
+    let mut blocks: Vec<Type> = Vec::new();
+    let block_paths = fs::read_dir("src/assets/blocks/").unwrap();
+
+    for path in block_paths {
+        let bytes = fs::read(path.unwrap().path()).expect("Could not read file");
+        let block: Type = toml::from_slice(&bytes).unwrap();
+        if block.id as usize >= blocks.len() {
+            blocks.push(block)
+        } else {
+            blocks.insert(block.id.into(), block)
         }
     }
-    panic!("Block type does not exist!");
+
+    match BLOCK_TYPES.set(blocks) {
+        Ok(_) => {}
+        Err(types) => panic!("Failed to initialize block types: {:?}", types)
+    }
+}
+
+pub fn get(id: u16) -> &'static Type {
+    BLOCK_TYPES.get().expect("You tried to get a block type before the block files have been deserialized!").get(id as usize).expect("Block type does not exist!")
 }

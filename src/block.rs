@@ -10,13 +10,13 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn new(block_type: Type) -> Self {
+    pub fn new(block_type: &Type) -> Self {
         Block {
             id: block_type.id
         }
     }
 
-    pub fn render(&self, pos: Vector3<i32>, offset: u16) -> [Quad; 6] {
+    pub fn render(&self, pos: Vector3<i32>, offset: u32) -> [Quad; 6] {
         [
             Quad::new(self.get_id(), Direction::UP,  Vector3::new(pos.x as f32, pos.y as f32 + 0.5, pos.z as f32), 0 + (offset * 20)),
             Quad::new(self.get_id(), Direction::DOWN,  Vector3::new(pos.x as f32, pos.y as f32 - 0.5, pos.z as f32), 4 + (offset * 20)),
