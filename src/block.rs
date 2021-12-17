@@ -2,7 +2,7 @@ use cgmath::Vector3;
 
 use crate::block_types::Type;
 use crate::quad::Quad;
-use crate::Direction;
+use crate::direction::Direction;
 
 #[derive(Clone, Copy)]
 pub struct Block {

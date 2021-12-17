@@ -1,8 +1,8 @@
 #![feature(const_fn_floating_point_arithmetic)]
 #![feature(once_cell)]
 
-use std::{iter, fmt};
-use cgmath::{prelude::*, Vector3};
+use std::iter;
+use cgmath::Vector3;
 use wgpu::{util::DeviceExt, Color};
 use winit::{
     event::*,
@@ -12,6 +12,7 @@ use winit::{
 
 use chunk::Chunk;
 use vertex::Vertex;
+use camera::*;
 
 mod vertex;
 mod quad;
@@ -19,204 +20,15 @@ mod block;
 mod chunk;
 mod texture;
 mod block_types;
+mod direction;
+mod camera;
 
 const BG_COLOR: Color = Color {
-    r: 0.2,
-    g: 0.55,
-    b: 0.65,
+    r: 0.44,
+    g: 0.73,
+    b: 0.88,
     a: 1.0,
 };
-
-#[derive(Hash, Eq, PartialEq, Debug)]
-pub enum Direction {
-    UP,
-    DOWN,
-    NORTH,
-    WEST,
-    SOUTH,
-    EAST
-}
-
-impl Direction {
-    pub fn get_vec(&self) -> Vector3<i8> {
-        match self {
-            Direction::UP => Vector3::new(0, 1, 0),
-            Direction::DOWN => Vector3::new(0, -1, 0),
-            Direction::NORTH => Vector3::new(0, 0, -1),
-            Direction::SOUTH => Vector3::new(0, 0, 1),
-            Direction::WEST => Vector3::new(1, 0, 0),
-            Direction::EAST => Vector3::new(-1, 0, 0),
-        }
-    }
-    pub fn get_id(&self) -> u8 {
-        match self {
-            Direction::UP => 0,
-            Direction::DOWN => 1,
-            Direction::NORTH => 2,
-            Direction::SOUTH => 3,
-            Direction::WEST => 4,
-            Direction::EAST => 5,
-        }
-    }
-    pub fn get_string(&self) -> String {
-        match self {
-            Direction::UP => String::from("up"),
-            Direction::DOWN => String::from("down"),
-            Direction::NORTH => String::from("north"),
-            Direction::SOUTH => String::from("south"),
-            Direction::WEST => String::from("west"),
-            Direction::EAST => String::from("east"),
-        }
-    }
-}
-
-#[rustfmt::skip]
-pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
-    1.0, 0.0, 0.0, 0.0,
-    0.0, 1.0, 0.0, 0.0,
-    0.0, 0.0, 0.5, 0.0,
-    0.0, 0.0, 0.5, 1.0,
-);
-
-struct Camera {
-    eye: cgmath::Point3<f32>,
-    target: cgmath::Point3<f32>,
-    up: cgmath::Vector3<f32>,
-    aspect: f32,
-    fovy: f32,
-    znear: f32,
-    zfar: f32,
-}
-
-impl Camera {
-    fn build_view_projection_matrix(&self) -> cgmath::Matrix4<f32> {
-        let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
-        let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
-        proj * view
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct CameraUniform {
-    view_proj: [[f32; 4]; 4],
-}
-
-impl CameraUniform {
-    fn new() -> Self {
-        Self {
-            view_proj: cgmath::Matrix4::identity().into(),
-        }
-    }
-
-    fn update_view_proj(&mut self, camera: &Camera) {
-        self.view_proj = (OPENGL_TO_WGPU_MATRIX * camera.build_view_projection_matrix()).into();
-    }
-}
-
-struct CameraController {
-    speed: f32,
-    is_up_pressed: bool,
-    is_down_pressed: bool,
-    is_forward_pressed: bool,
-    is_backward_pressed: bool,
-    is_left_pressed: bool,
-    is_right_pressed: bool,
-}
-
-impl CameraController {
-    fn new(speed: f32) -> Self {
-        Self {
-            speed,
-            is_up_pressed: false,
-            is_down_pressed: false,
-            is_forward_pressed: false,
-            is_backward_pressed: false,
-            is_left_pressed: false,
-            is_right_pressed: false,
-        }
-    }
-
-    fn process_events(&mut self, event: &WindowEvent) -> bool {
-        match event {
-            WindowEvent::KeyboardInput {
-                input:
-                    KeyboardInput {
-                        state,
-                        virtual_keycode: Some(keycode),
-                        ..
-                    },
-                ..
-            } => {
-                let is_pressed = *state == ElementState::Pressed;
-                match keycode {
-                    VirtualKeyCode::Space => {
-                        self.is_up_pressed = is_pressed;
-                        true
-                    }
-                    VirtualKeyCode::LShift => {
-                        self.is_down_pressed = is_pressed;
-                        true
-                    }
-                    VirtualKeyCode::W | VirtualKeyCode::Up => {
-                        self.is_forward_pressed = is_pressed;
-                        true
-                    }
-                    VirtualKeyCode::A | VirtualKeyCode::Left => {
-                        self.is_left_pressed = is_pressed;
-                        true
-                    }
-                    VirtualKeyCode::S | VirtualKeyCode::Down => {
-                        self.is_backward_pressed = is_pressed;
-                        true
-                    }
-                    VirtualKeyCode::D | VirtualKeyCode::Right => {
-                        self.is_right_pressed = is_pressed;
-                        true
-                    }
-                    _ => false,
-                }
-            }
-            _ => false,
-        }
-    }
-
-    fn update_camera(&self, camera: &mut Camera) {
-        let forward = camera.target - camera.eye;
-        let forward_norm = forward.normalize();
-        let forward_mag = forward.magnitude();
-
-        // Prevents glitching when camera gets too close to the
-        // center of the scene.
-        if self.is_forward_pressed && forward_mag > self.speed {
-            camera.eye += forward_norm * self.speed;
-        }
-        if self.is_backward_pressed {
-            camera.eye -= forward_norm * self.speed;
-        }
-
-        let right = forward_norm.cross(camera.up);
-        let up = forward_norm.cross(Vector3::new(1.0, 0.0, 0.0));
-
-        // Redo radius calc in case the up/ down is pressed.
-        let forward = camera.target - camera.eye;
-        let forward_mag = forward.magnitude();
-
-        if self.is_right_pressed {
-            // Rescale the distance between the target and eye so
-            // that it doesn't change. The eye therefore still
-            // lies on the circle made by the target and eye.
-            camera.eye = camera.target - (forward + right * self.speed).normalize() * forward_mag;
-        }
-        if self.is_left_pressed {
-            camera.eye = camera.target - (forward - right * self.speed).normalize() * forward_mag;
-        }
-        if self.is_down_pressed {
-            camera.eye = camera.target - (forward - up * self.speed).normalize() * forward_mag;
-        }
-    }
-}
-
 
 struct State {
     surface: wgpu::Surface,
@@ -242,10 +54,14 @@ struct State {
 impl State {
     async fn new(window: &Window) -> Self {
         let size = window.inner_size();
-        
-        let mut chunk = Chunk::new(Vector3::new(0, 0, 0));
-        let (vertices, indices) = chunk.render();
 
+        let mut vertices: Vec<Vertex> = Vec::new();
+        let mut indices: Vec<u32> = Vec::new();
+
+        let chunk = Chunk::new(Vector3::new(-8, -8, -8)).render();
+        vertices.extend(chunk.0);
+        indices.extend(chunk.1);
+        
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
         let instance = wgpu::Instance::new(wgpu::Backends::all());

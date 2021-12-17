@@ -55,14 +55,6 @@ impl Chunk {
     }
 }
 
-fn is_on_edge(pos: Vector3<u8>, direction: u8) -> bool {
-    //if pos.y <= 1 || pos.y >= 3 {// || pos.x >= (SIZE - 1) as u8 || pos.y >= (SIZE - 1) as u8 || pos.z >= (SIZE - 1) as u8 {
-    ////if pos.x <= 0 {//&& direction == &Direction::EAST {
-        return true;
-    //}
-    //false
-}
-
 fn index(pos: Vector3<u32>) -> u32 {
     (pos.x * (SIZE * SIZE) as u32) + (pos.y * SIZE as u32) + pos.z
 }

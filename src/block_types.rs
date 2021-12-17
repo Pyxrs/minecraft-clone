@@ -1,9 +1,9 @@
 use serde_derive::Deserialize;
 use toml::value::{Table, Array};
 use once_cell::sync::OnceCell;
-use std::{fs, slice::SliceIndex};
+use std::fs;
 
-use crate::Direction;
+use crate::direction::Direction;
 
 pub static BLOCK_TYPES: OnceCell<Vec<Type>> = OnceCell::new();
 

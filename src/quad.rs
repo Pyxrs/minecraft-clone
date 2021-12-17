@@ -1,12 +1,11 @@
 use cgmath::Vector3;
 
-use crate::Direction;
+use crate::direction::Direction;
 use crate::vertex::Vertex;
 
 const TEXTURE_INCREMENT: f32 = 1.0 / 256.0;
 
 pub struct Quad {
-    texture_id: u16,
     position: Vector3<f32>,
     direction: Direction,
     vertices: [Vertex; 4],
@@ -17,7 +16,6 @@ impl Quad {
     pub fn new(texture_id: u16, direction: Direction, position: Vector3<f32>, index_offset: u32) -> Quad {
         let calculations = calc_quad(texture_id, index_offset, &direction, position);
         Quad {
-            texture_id,
             direction,
             position,
             vertices: calculations.0,
@@ -25,10 +23,12 @@ impl Quad {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_position(&self) -> Vector3<f32> {
         self.position
     }
 
+    #[allow(dead_code)]
     pub fn get_direction(&self) -> &Direction {
         &self.direction
     }
@@ -59,9 +59,9 @@ fn calc_quad(id: u16, index: u32, direction: &Direction, position: Vector3<f32>)
         Direction::UP => 1.0,
         Direction::DOWN => 0.25,
         Direction::NORTH => 0.5,
-        Direction::SOUTH => 0.75,
+        Direction::SOUTH => 0.5,
         Direction::WEST => 0.75,
-        Direction::EAST => 0.5,
+        Direction::EAST => 0.25,
     };
 
     let vertices_ud = [
