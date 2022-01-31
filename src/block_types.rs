@@ -5,9 +5,9 @@ use std::fs;
 
 use crate::direction::Direction;
 
-pub static BLOCK_TYPES: OnceCell<Vec<Type>> = OnceCell::new();
+pub static BLOCK_TYPES: OnceCell<Vec<Option<Type>>> = OnceCell::new();
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Type {
     pub name: String,
     pub id: u16,
@@ -22,17 +22,15 @@ impl Type {
 }
 
 pub fn init() {
-    let mut blocks: Vec<Type> = Vec::new();
+    let mut blocks: Vec<Option<Type>> = vec![None; 1000];
     let block_paths = fs::read_dir("src/assets/blocks/").unwrap();
 
     for path in block_paths {
         let bytes = fs::read(path.unwrap().path()).expect("Could not read file");
         let block: Type = toml::from_slice(&bytes).unwrap();
-        if block.id as usize >= blocks.len() {
-            blocks.push(block)
-        } else {
-            blocks.insert(block.id.into(), block)
-        }
+        let id = block.clone().id;
+        
+        blocks[id as usize] = Some(block);
     }
 
     match BLOCK_TYPES.set(blocks) {
@@ -42,5 +40,5 @@ pub fn init() {
 }
 
 pub fn get(id: u16) -> &'static Type {
-    BLOCK_TYPES.get().expect("You tried to get a block type before the block files have been deserialized!").get(id as usize).expect("Block type does not exist!")
+    BLOCK_TYPES.get().expect("You tried to get a block type before the block files have been deserialized!").get(id as usize).expect("Block type does not exist!").as_ref().expect("Out of bounds!")
 }

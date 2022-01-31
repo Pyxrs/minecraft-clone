@@ -38,7 +38,7 @@ impl Quad {
     }
 
     pub fn get_indices(&self, offset: u32) -> [u32; 6] {
-        let mut indices = self.indices.clone();
+        let mut indices = self.indices;
         for i in 0..indices.len() {
             indices[i] = indices[i] + offset * 4;
         };

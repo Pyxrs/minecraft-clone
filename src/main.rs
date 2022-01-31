@@ -57,10 +57,6 @@ impl State {
 
         let mut vertices: Vec<Vertex> = Vec::new();
         let mut indices: Vec<u32> = Vec::new();
-
-        let chunk = Chunk::new(Vector3::new(-8, -8, -8)).render();
-        vertices.extend(chunk.0);
-        indices.extend(chunk.1);
         
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
@@ -245,7 +241,12 @@ impl State {
             },
         });
 
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let chunk = Chunk::new(Vector3::new(-8, -8, -8)).render(&device);
+        let vertex_buffer = chunk.0;
+        let index_buffer = chunk.1;
+        let num_indices = chunk.2;
+
+        /*let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(&vertices),
             usage: wgpu::BufferUsages::VERTEX,
@@ -255,7 +256,7 @@ impl State {
             contents: bytemuck::cast_slice(&indices),
             usage: wgpu::BufferUsages::INDEX,
         });
-        let num_indices = indices.len() as u32;
+        let num_indices = indices.len() as u32;*/
 
         Self {
             surface,
@@ -306,6 +307,7 @@ impl State {
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture

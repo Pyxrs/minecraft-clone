@@ -11,6 +11,17 @@ pub enum Direction {
 }
 
 impl Direction {
+    pub fn get(id: u8) -> Direction {
+        match id {
+            0 => Direction::UP,
+            1 => Direction::DOWN,
+            2 => Direction::NORTH,
+            3 => Direction::SOUTH,
+            4 => Direction::WEST,
+            5 => Direction::EAST,
+            _ => panic!("Invalid ID!"),
+        }
+    }
     pub fn get_vec(&self) -> Vector3<i8> {
         match self {
             Direction::UP => Vector3::new(0, 1, 0),
