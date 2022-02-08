@@ -1,67 +1,80 @@
 use cgmath::Vector3;
 
-use crate::direction::Direction;
-use crate::vertex::Vertex;
+use crate::{Vertex, direction::Direction};
 
 const TEXTURE_INCREMENT: f32 = 1.0 / 256.0;
+const SKY_INCREMENT: f32 = 1.0 / 6.0;
 
 pub struct Quad {
-    position: Vector3<f32>,
-    direction: Direction,
-    vertices: [Vertex; 4],
-    indices: [u32; 6]
+    pub vertices: [Vertex; 4],
+    pub indices: [u32; 6],
 }
 
 impl Quad {
-    pub fn new(texture_id: u16, direction: Direction, position: Vector3<f32>, index_offset: u32) -> Quad {
-        let calculations = calc_quad(texture_id, index_offset, &direction, position);
-        Quad {
-            direction,
-            position,
-            vertices: calculations.0,
-            indices: calculations.1,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn get_position(&self) -> Vector3<f32> {
-        self.position
-    }
-
-    #[allow(dead_code)]
-    pub fn get_direction(&self) -> &Direction {
-        &self.direction
-    }
-
-    pub fn get_vertices(&self) -> &[Vertex] {
-        &self.vertices
-    }
-
-    pub fn get_indices(&self, offset: u32) -> [u32; 6] {
-        let mut indices = self.indices;
-        for i in 0..indices.len() {
-            indices[i] = indices[i] + offset * 4;
-        };
-        indices
+    fn new(vertices: [Vertex; 4], indices: [u32; 6]) -> Self {
+        Self { vertices, indices }
     }
 }
 
-fn calc_quad(id: u16, index: u32, direction: &Direction, position: Vector3<f32>) -> ([Vertex; 4], [u32; 6]) {
+pub fn block_quad(
+    id: u16,
+    index: u32,
+    direction: Direction,
+    position: Vector3<f32>,
+) -> Quad {
     let block_type = crate::block_types::get(id);
     let text_id = block_type.get_texture(direction);
     let text_0: f32 = TEXTURE_INCREMENT * text_id as f32;
     let text_1: f32 = TEXTURE_INCREMENT * (text_id + 1) as f32;
+    quad(text_0, text_1, index, direction, position, true)
+}
 
-    let indices_f = [0 + index, 1 + index, 2 + index, 2 + index, 1 + index, 3 + index];
-    let indices_b = [2 + index, 1 + index, 0 + index, 3 + index, 1 + index, 2 + index];
+pub fn sky_quad(
+    index: u32,
+    direction: Direction,
+    position: Vector3<f32>,
+) -> Quad {
+    let text_0: f32 = SKY_INCREMENT * direction.get_id() as f32;
+    let text_1: f32 = SKY_INCREMENT * (direction.get_id() + 1) as f32;
+    quad(text_0, text_1, index, direction, position, false)
+}
 
-    let light = match direction {
-        Direction::UP => 1.0,
-        Direction::DOWN => 0.25,
-        Direction::NORTH => 0.5,
-        Direction::SOUTH => 0.5,
-        Direction::WEST => 0.75,
-        Direction::EAST => 0.25,
+pub fn quad(
+    text_0: f32,
+    text_1: f32,
+    index: u32,
+    direction: Direction,
+    position: Vector3<f32>,
+    lighting: bool,
+) -> Quad {
+    let indices_f = [
+        0 + (index * 4),
+        1 + (index * 4),
+        2 + (index * 4),
+        2 + (index * 4),
+        1 + (index * 4),
+        3 + (index * 4),
+    ];
+    let indices_b = [
+        2 + (index * 4),
+        1 + (index * 4),
+        0 + (index * 4),
+        3 + (index * 4),
+        1 + (index * 4),
+        2 + (index * 4),
+    ];
+
+    let light = if lighting {
+        match direction {
+            Direction::UP => 1.0,
+            Direction::DOWN => 0.25,
+            Direction::NORTH => 0.5,
+            Direction::SOUTH => 0.5,
+            Direction::WEST => 0.75,
+            Direction::EAST => 0.25,
+        }
+    } else {
+        1.0
     };
 
     let vertices_ud = [
@@ -132,11 +145,11 @@ fn calc_quad(id: u16, index: u32, direction: &Direction, position: Vector3<f32>)
     ];
 
     match direction {
-        Direction::UP => (vertices_ud, indices_f),
-        Direction::DOWN => (vertices_ud, indices_b),
-        Direction::NORTH => (vertices_ns, indices_f),
-        Direction::SOUTH => (vertices_ns, indices_b),
-        Direction::WEST => (vertices_we, indices_f),
-        Direction::EAST => (vertices_we, indices_b),
+        Direction::UP => Quad::new(vertices_ud, indices_f),
+        Direction::DOWN => Quad::new(vertices_ud, indices_b),
+        Direction::NORTH => Quad::new(vertices_ns, indices_f),
+        Direction::SOUTH => Quad::new(vertices_ns, indices_b),
+        Direction::WEST => Quad::new(vertices_we, indices_f),
+        Direction::EAST => Quad::new(vertices_we, indices_b),
     }
 }

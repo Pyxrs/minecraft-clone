@@ -16,7 +16,7 @@ pub struct Type {
 }
 
 impl Type {
-    pub fn get_texture(&self, direction: &Direction) -> u16 {
+    pub fn get_texture(&self, direction: Direction) -> u16 {
         self.textures.get(&direction.get_string()).unwrap().as_integer().unwrap() as u16
     }
 }

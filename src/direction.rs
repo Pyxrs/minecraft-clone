@@ -1,6 +1,6 @@
 use cgmath::Vector3;
 
-#[derive(Hash, Eq, PartialEq, Debug)]
+#[derive(Hash, Eq, PartialEq, Debug, Clone, Copy)]
 pub enum Direction {
     UP,
     DOWN,
