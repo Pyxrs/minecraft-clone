@@ -3,6 +3,7 @@ use std::iter;
 use cgmath::{Vector3, Point3};
 use chunk::Chunk;
 use chunk_manager::ChunkManager;
+use direction::Direction;
 use render::texture::Texture;
 use wgpu::util::DeviceExt;
 use winit::{
@@ -106,6 +107,10 @@ struct CameraController {
     is_right_pressed: bool,
     is_forward_pressed: bool,
     is_backward_pressed: bool,
+    is_look_left_pressed: bool,
+    is_look_right_pressed: bool,
+    is_look_up_pressed: bool,
+    is_look_down_pressed: bool,
 }
 
 impl CameraController {
@@ -118,6 +123,10 @@ impl CameraController {
             is_right_pressed: false,
             is_forward_pressed: false,
             is_backward_pressed: false,
+            is_look_left_pressed: false,
+            is_look_right_pressed: false,
+            is_look_up_pressed: false,
+            is_look_down_pressed: false,
         }
     }
 
@@ -134,7 +143,7 @@ impl CameraController {
             } => {
                 let is_pressed = *state == ElementState::Pressed;
                 match keycode {
-                    VirtualKeyCode::W | VirtualKeyCode::Up => {
+                    VirtualKeyCode::W => {
                         self.is_forward_pressed = is_pressed;
                         true
                     }
@@ -142,7 +151,7 @@ impl CameraController {
                         self.is_left_pressed = is_pressed;
                         true
                     }
-                    VirtualKeyCode::S | VirtualKeyCode::Down => {
+                    VirtualKeyCode::S => {
                         self.is_backward_pressed = is_pressed;
                         true
                     }
@@ -158,6 +167,23 @@ impl CameraController {
                         self.is_down_pressed = is_pressed;
                         true
                     }
+
+                    VirtualKeyCode::Up => {
+                        self.is_look_up_pressed = is_pressed;
+                        true
+                    }
+                    VirtualKeyCode::Left => {
+                        self.is_look_left_pressed = is_pressed;
+                        true
+                    }
+                    VirtualKeyCode::Down => {
+                        self.is_look_down_pressed = is_pressed;
+                        true
+                    }
+                    VirtualKeyCode::Right => {
+                        self.is_look_right_pressed = is_pressed;
+                        true
+                    }
                     _ => false,
                 }
             }
@@ -169,35 +195,55 @@ impl CameraController {
         use cgmath::InnerSpace;
         let forward = camera.target - camera.eye;
         let forward_norm = forward.normalize();
-        let forward_mag = forward.magnitude();
+        let right = forward_norm.cross(camera.up);
+
+        let aligned_forward_norm = Vector3::new(forward_norm.x, 0.0, forward_norm.z);
 
         // Prevents glitching when camera gets too close to the
         // center of the scene.
-        if self.is_forward_pressed && forward_mag > self.speed {
-            camera.eye += forward_norm * self.speed;
+        if self.is_forward_pressed {
+            camera.eye += aligned_forward_norm * self.speed;
+            camera.target += aligned_forward_norm * self.speed;
         }
         if self.is_backward_pressed {
-            camera.eye -= forward_norm * self.speed;
+            camera.eye -= aligned_forward_norm * self.speed;
+            camera.target -= aligned_forward_norm * self.speed;
+        }
+        if self.is_left_pressed {
+            camera.eye -= right * self.speed;
+            camera.target -= right * self.speed;
+        }
+        if self.is_right_pressed {
+            camera.eye += right * self.speed;
+            camera.target += right * self.speed;
         }
 
-        let right = forward_norm.cross(camera.up);
-
         // Redo radius calc in case the up/ down is pressed.
-        let forward = camera.target - camera.eye;
-        let forward_mag = forward.magnitude();
-        if !(self.is_right_pressed && self.is_left_pressed) {
-            if self.is_right_pressed {
-                camera.eye = camera.target - (forward + right * self.speed).normalize() * forward_mag;
+        let forward = camera.eye - camera.target;
+        let forward_mag = 10.0;
+        if !(self.is_look_right_pressed && self.is_look_left_pressed) {
+            if self.is_look_left_pressed {
+                camera.target = camera.eye - (forward + right * self.speed).normalize() * forward_mag;
             }
-            if self.is_left_pressed {
-                camera.eye = camera.target - (forward - right * self.speed).normalize() * forward_mag;
+            if self.is_look_right_pressed {
+                camera.target = camera.eye - (forward - right * self.speed).normalize() * forward_mag;
+            }
+        }
+        if !(self.is_look_up_pressed && self.is_look_down_pressed) {
+            if self.is_look_down_pressed {
+                camera.target = camera.eye - (forward + Vector3::new(0.0, 1.0, 0.0) * self.speed).normalize() * forward_mag;
+            }
+            if self.is_look_up_pressed {
+                camera.target = camera.eye - (forward - Vector3::new(0.0, 1.0, 0.0) * self.speed).normalize() * forward_mag;
             }
         }
         if self.is_up_pressed {
             camera.eye.y += 0.25;
+            camera.target.y += 0.25;
         }
         if self.is_down_pressed {
             camera.eye.y -= 0.25;
+            camera.target.y -= 0.25;
         }
     }
 }
@@ -328,10 +374,10 @@ impl State {
 
         let camera = Camera {
             eye: (0.0, 1.0, 2.0).into(),
-            target: (0.0, 0.0, 0.0).into(),
+            target: (0.0, 1.0, 0.0).into(),
             up: cgmath::Vector3::unit_y(),
             aspect: config.width as f32 / config.height as f32,
-            fovy: 45.0,
+            fovy: 70.0,
             znear: 0.1,
             zfar: 100.0,
         };
@@ -533,6 +579,12 @@ impl State {
 
         let break_pos = Vector3::new(self.camera.eye.x as i32, self.camera.eye.y as i32, self.camera.eye.z as i32);
         self.chunk_manager.set_block(break_pos, 0);
+        self.chunk_manager.set_block(break_pos + Vector3::new(0, 1, 0), 0);
+        self.chunk_manager.set_block(break_pos + Vector3::new(0, -1, 0), 0);
+        self.chunk_manager.set_block(break_pos + Vector3::new(1, 0, 0), 0);
+        self.chunk_manager.set_block(break_pos + Vector3::new(-1, 0, 0), 0);
+        self.chunk_manager.set_block(break_pos + Vector3::new(0, 0, 1), 0);
+        self.chunk_manager.set_block(break_pos + Vector3::new(0, 0, -1), 0);
         let break_chunk_index = self.chunk_manager.get_pos_index(break_pos);
         let break_chunk = self.chunk_manager.get_pos_chunk(break_pos);
         if break_chunk_index.is_some() && break_chunk.is_some() {

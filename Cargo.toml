@@ -1,5 +1,5 @@
 [package]
-name = "mc"
+name = "wgpu"
 version = "0.1.0"
 authors = ["SimplyCmd <simplycmd00@gmail.com>"]
 edition = "2021"
