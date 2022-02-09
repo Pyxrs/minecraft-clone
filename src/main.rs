@@ -1,6 +1,8 @@
 use std::iter;
 
-use cgmath::Vector3;
+use cgmath::{Vector3, Point3};
+use chunk::Chunk;
+use chunk_manager::ChunkManager;
 use render::texture::Texture;
 use wgpu::util::DeviceExt;
 use winit::{
@@ -9,11 +11,13 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 use crate::render::*;
+use crate::render::chunk_buffers::ChunkBuffers;
 
 mod render;
 mod direction;
 mod chunk;
 mod block_types;
+mod chunk_manager;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -206,9 +210,8 @@ struct State {
     size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
     pre_render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    num_indices: u32,
+    chunk_manager: ChunkManager,
+    chunk_buffers: ChunkBuffers,
     #[allow(dead_code)]
     diffuse_texture: texture::Texture,
     diffuse_bind_group: wgpu::BindGroup,
@@ -472,11 +475,13 @@ impl State {
             multiview: None,
         });
 
-        let chunk = chunk_builder::build(&device, Vector3::new(0.0, 0.0, 0.0), &mut chunk::Chunk::new());
-
-        let vertex_buffer = chunk.0;
-        let index_buffer = chunk.1;
-        let num_indices = chunk.2;
+        let mut chunk_manager = ChunkManager::new();
+        chunk_manager.add_chunk(Chunk::new_filled(Vector3::new(0, 0, 0), 1));
+        chunk_manager.add_chunk(Chunk::new_layered(Vector3::new(0, 1, 0), 1, 2, 3));
+        chunk_manager.add_chunk(Chunk::new_filled(Vector3::new(-1, 0, 0), 3));
+        chunk_manager.add_chunk(Chunk::new_filled(Vector3::new(-1, 1, 0), 4));
+        
+        let chunk_buffers = ChunkBuffers::new(&device, &chunk_manager);
 
         Self {
             surface,
@@ -486,9 +491,8 @@ impl State {
             size,
             render_pipeline,
             pre_render_pipeline,
-            vertex_buffer,
-            index_buffer,
-            num_indices,
+            chunk_manager,
+            chunk_buffers,
             diffuse_texture,
             diffuse_bind_group,
             sky_diffuse_texture,
@@ -526,6 +530,14 @@ impl State {
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
+
+        let break_pos = Vector3::new(self.camera.eye.x as i32, self.camera.eye.y as i32, self.camera.eye.z as i32);
+        self.chunk_manager.set_block(break_pos, 0);
+        let break_chunk_index = self.chunk_manager.get_pos_index(break_pos);
+        let break_chunk = self.chunk_manager.get_pos_chunk(break_pos);
+        if break_chunk_index.is_some() && break_chunk.is_some() {
+            self.chunk_buffers.update_chunk(&self.device, break_chunk_index.unwrap(), break_chunk.unwrap());
+        }
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -541,7 +553,7 @@ impl State {
             });
 
         {
-            let (sky0, sky1, sky2) = sky_builder::build(&self.device, Vector3::new(self.camera.eye.x, self.camera.eye.y, self.camera.eye.z), 0.0, 0);
+            let (sky0, sky1, sky2) = sky::build(&self.device, Vector3::new(self.camera.eye.x, self.camera.eye.y, self.camera.eye.z));
 
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -577,13 +589,12 @@ impl State {
 
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
 
-            //render_pass.set_vertex_buffer(0, self.vertex_buffer2.slice(..));
-            //render_pass.set_index_buffer(self.index_buffer2.slice(..), wgpu::IndexFormat::Uint32);
-            //render_pass.draw_indexed(0..self.num_indices2, 0, 0..1);
+            for buffers in self.chunk_buffers.get_buffers() {
+                render_pass.set_vertex_buffer(0, buffers.0.slice(..));
+                render_pass.set_index_buffer(buffers.1.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..buffers.2, 0, 0..1);
+            }
         }
 
         self.queue.submit(iter::once(encoder.finish()));
@@ -594,6 +605,7 @@ impl State {
 }
 
 fn main() {
+
     env_logger::init();
     block_types::init();
     

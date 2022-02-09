@@ -5,7 +5,7 @@ use crate::{direction::Direction, Vertex};
 
 use super::quad::sky_quad;
 
-pub fn build(device: &Device, pos: Vector3<f32>, time: f32, weather: u8) -> (wgpu::Buffer, wgpu::Buffer, u32) {
+pub fn build(device: &Device, pos: Vector3<f32>) -> (wgpu::Buffer, wgpu::Buffer, u32) {
     let mut vertices: Vec<Vertex> = vec![];
     let mut indices: Vec<u32> = vec![];
     for quad in [
