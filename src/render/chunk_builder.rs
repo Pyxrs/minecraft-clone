@@ -1,4 +1,4 @@
-use cgmath::Vector3;
+use cgmath::{Vector3, Point3};
 use wgpu::{util::DeviceExt, Device};
 
 use crate::{chunk::Chunk, direction::Direction, Vertex};
@@ -15,28 +15,28 @@ pub fn build(device: &Device, chunk: &Chunk) -> (wgpu::Buffer, wgpu::Buffer, u32
     for x in 0..chunk_size {
         for y in 0..chunk.blocks[x].len() {
             for z in 0..chunk.blocks[x][y].len() {
-                if chunk.get_block(Vector3::new(x as u8, y as u8, z as u8)) == 0 {
+                if chunk.get_block(Point3::new(x as u8, y as u8, z as u8)) == 0 {
                     continue;
                 }
                 let mut count = 0;
 
-                if chunk.get_block(Vector3::new(x as u8, y as u8 + 1, z as u8)) == 0 {
-                    quads.push(block_quad(chunk.get_block(Vector3::new(x as u8, y as u8, z as u8)), count + index, Direction::UP,  Vector3::new((pos.x + x as i32) as f32 - (chunk_size as f32 / 2.0), (pos.y + y as i32) as f32 + 0.5 - (chunk_size as f32 / 2.0), (pos.z + z as i32) as f32 - (chunk_size as f32 / 2.0))));
+                if chunk.get_block(Point3::new(x as u8, y as u8 + 1, z as u8)) == 0 {
+                    quads.push(block_quad(chunk.get_block(Point3::new(x as u8, y as u8, z as u8)), count + index, Direction::UP,  Vector3::new((pos.x + x as i32) as f32 - (chunk_size as f32 / 2.0), (pos.y + y as i32) as f32 + 0.5 - (chunk_size as f32 / 2.0), (pos.z + z as i32) as f32 - (chunk_size as f32 / 2.0))));
                     count += 1;
-                } if chunk.get_block_s(Vector3::new(x as i16, y as i16 - 1, z as i16)) == 0 {
-                    quads.push(block_quad(chunk.get_block(Vector3::new(x as u8, y as u8, z as u8)), count + index, Direction::DOWN,  Vector3::new((pos.x + x as i32) as f32 - (chunk_size as f32 / 2.0), (pos.y + y as i32) as f32 - 0.5 - (chunk_size as f32 / 2.0), (pos.z + z as i32) as f32 - (chunk_size as f32 / 2.0))));
+                } if chunk.get_block_s(Point3::new(x as i16, y as i16 - 1, z as i16)) == 0 {
+                    quads.push(block_quad(chunk.get_block(Point3::new(x as u8, y as u8, z as u8)), count + index, Direction::DOWN,  Vector3::new((pos.x + x as i32) as f32 - (chunk_size as f32 / 2.0), (pos.y + y as i32) as f32 - 0.5 - (chunk_size as f32 / 2.0), (pos.z + z as i32) as f32 - (chunk_size as f32 / 2.0))));
                     count += 1;
-                } if chunk.get_block_s(Vector3::new(x as i16, y as i16, z as i16 - 1)) == 0 {
-                    quads.push(block_quad(chunk.get_block(Vector3::new(x as u8, y as u8, z as u8)), count + index, Direction::NORTH, Vector3::new((pos.x + x as i32) as f32 - (chunk_size as f32 / 2.0), (pos.y + y as i32) as f32 - (chunk_size as f32 / 2.0), (pos.z + z as i32) as f32 - 0.5 - (chunk_size as f32 / 2.0))));
+                } if chunk.get_block_s(Point3::new(x as i16, y as i16, z as i16 - 1)) == 0 {
+                    quads.push(block_quad(chunk.get_block(Point3::new(x as u8, y as u8, z as u8)), count + index, Direction::NORTH, Vector3::new((pos.x + x as i32) as f32 - (chunk_size as f32 / 2.0), (pos.y + y as i32) as f32 - (chunk_size as f32 / 2.0), (pos.z + z as i32) as f32 - 0.5 - (chunk_size as f32 / 2.0))));
                     count += 1;
-                } if chunk.get_block(Vector3::new(x as u8, y as u8, z as u8 + 1)) == 0 {
-                    quads.push(block_quad(chunk.get_block(Vector3::new(x as u8, y as u8, z as u8)), count + index, Direction::SOUTH, Vector3::new((pos.x + x as i32) as f32 - (chunk_size as f32 / 2.0), (pos.y + y as i32) as f32 - (chunk_size as f32 / 2.0), (pos.z + z as i32) as f32 + 0.5 - (chunk_size as f32 / 2.0))));
+                } if chunk.get_block(Point3::new(x as u8, y as u8, z as u8 + 1)) == 0 {
+                    quads.push(block_quad(chunk.get_block(Point3::new(x as u8, y as u8, z as u8)), count + index, Direction::SOUTH, Vector3::new((pos.x + x as i32) as f32 - (chunk_size as f32 / 2.0), (pos.y + y as i32) as f32 - (chunk_size as f32 / 2.0), (pos.z + z as i32) as f32 + 0.5 - (chunk_size as f32 / 2.0))));
                     count += 1;
-                } if chunk.get_block(Vector3::new(x as u8 + 1, y as u8, z as u8)) == 0 {
-                    quads.push(block_quad(chunk.get_block(Vector3::new(x as u8, y as u8, z as u8)), count + index, Direction::WEST, Vector3::new((pos.x + x as i32) as f32 + 0.5 - (chunk_size as f32 / 2.0), (pos.y + y as i32) as f32 - (chunk_size as f32 / 2.0), (pos.z + z as i32) as f32 - (chunk_size as f32 / 2.0))));
+                } if chunk.get_block(Point3::new(x as u8 + 1, y as u8, z as u8)) == 0 {
+                    quads.push(block_quad(chunk.get_block(Point3::new(x as u8, y as u8, z as u8)), count + index, Direction::WEST, Vector3::new((pos.x + x as i32) as f32 + 0.5 - (chunk_size as f32 / 2.0), (pos.y + y as i32) as f32 - (chunk_size as f32 / 2.0), (pos.z + z as i32) as f32 - (chunk_size as f32 / 2.0))));
                     count += 1;
-                } if chunk.get_block_s(Vector3::new(x as i16 - 1, y as i16, z as i16)) == 0 {
-                    quads.push(block_quad(chunk.get_block(Vector3::new(x as u8, y as u8, z as u8)), count + index, Direction::EAST, Vector3::new((pos.x + x as i32) as f32 - 0.5 - (chunk_size as f32 / 2.0), (pos.y + y as i32) as f32 - (chunk_size as f32 / 2.0), (pos.z + z as i32) as f32 - (chunk_size as f32 / 2.0))));
+                } if chunk.get_block_s(Point3::new(x as i16 - 1, y as i16, z as i16)) == 0 {
+                    quads.push(block_quad(chunk.get_block(Point3::new(x as u8, y as u8, z as u8)), count + index, Direction::EAST, Vector3::new((pos.x + x as i32) as f32 - 0.5 - (chunk_size as f32 / 2.0), (pos.y + y as i32) as f32 - (chunk_size as f32 / 2.0), (pos.z + z as i32) as f32 - (chunk_size as f32 / 2.0))));
                     count += 1;
                 }
                 index += count;

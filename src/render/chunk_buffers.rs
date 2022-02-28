@@ -27,7 +27,11 @@ impl ChunkBuffers {
     }
 
     pub fn update_chunk(&mut self, device: &Device, index: usize, chunk: &Chunk) {
-        self.buffers[index] = chunk_builder::build(device, chunk);
+        if index < self.buffers.len() {
+            self.buffers[index] = chunk_builder::build(device, chunk);
+        } else {
+            self.buffers.push(chunk_builder::build(device, chunk));
+        }
     }
 
     pub fn get_buffers(&self) -> &Vec<(wgpu::Buffer, wgpu::Buffer, u32)> {

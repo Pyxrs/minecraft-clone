@@ -1,9 +1,13 @@
 use std::iter;
 
-use cgmath::{Vector3, Point3};
+use crate::render::chunk_buffers::ChunkBuffers;
+use crate::render::*;
+use cgmath::{Point3, Vector3};
 use chunk::Chunk;
 use chunk_manager::ChunkManager;
 use direction::Direction;
+use once_cell::sync::OnceCell;
+use rand::prelude::ThreadRng;
 use render::texture::Texture;
 use wgpu::util::DeviceExt;
 use winit::{
@@ -11,14 +15,18 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
 };
-use crate::render::*;
-use crate::render::chunk_buffers::ChunkBuffers;
+use noise::{NoiseFn, Perlin};
 
-mod render;
-mod direction;
-mod chunk;
 mod block_types;
+mod chunk;
 mod chunk_manager;
+mod direction;
+mod render;
+mod raycaster;
+mod math;
+
+pub const RENDER_DISTANCE: i32 = 2;
+pub static PERLIN: OnceCell<Perlin> = OnceCell::new();
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -46,7 +54,8 @@ impl Vertex {
                     format: wgpu::VertexFormat::Float32x2,
                 },
                 wgpu::VertexAttribute {
-                    offset: (mem::size_of::<[f32; 3]>() + mem::size_of::<[f32; 2]>()) as wgpu::BufferAddress,
+                    offset: (mem::size_of::<[f32; 3]>() + mem::size_of::<[f32; 2]>())
+                        as wgpu::BufferAddress,
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float32,
                 },
@@ -111,6 +120,8 @@ struct CameraController {
     is_look_right_pressed: bool,
     is_look_up_pressed: bool,
     is_look_down_pressed: bool,
+    mouse_x: f64,
+    mouse_y: f64,
 }
 
 impl CameraController {
@@ -127,22 +138,20 @@ impl CameraController {
             is_look_right_pressed: false,
             is_look_up_pressed: false,
             is_look_down_pressed: false,
+            mouse_x: 0.0,
+            mouse_y: 0.0,
         }
     }
 
-    fn process_events(&mut self, event: &WindowEvent) -> bool {
+    fn process_events(&mut self, event: &DeviceEvent) -> bool {
         match event {
-            WindowEvent::KeyboardInput {
-                input:
-                    KeyboardInput {
-                        state,
-                        virtual_keycode: Some(keycode),
-                        ..
-                    },
+            DeviceEvent::Key(KeyboardInput {
+                virtual_keycode: Some(key),
+                state,
                 ..
-            } => {
+            }) => {
                 let is_pressed = *state == ElementState::Pressed;
-                match keycode {
+                match key {
                     VirtualKeyCode::W => {
                         self.is_forward_pressed = is_pressed;
                         true
@@ -187,6 +196,11 @@ impl CameraController {
                     _ => false,
                 }
             }
+            DeviceEvent::MouseMotion { delta } => {
+                self.mouse_x = delta.0;
+                self.mouse_y = delta.1;
+                true
+            }
             _ => false,
         }
     }
@@ -196,6 +210,7 @@ impl CameraController {
         let forward = camera.target - camera.eye;
         let forward_norm = forward.normalize();
         let right = forward_norm.cross(camera.up);
+        let up = forward_norm.cross(right).normalize();
 
         let aligned_forward_norm = Vector3::new(forward_norm.x, 0.0, forward_norm.z);
 
@@ -221,21 +236,33 @@ impl CameraController {
         // Redo radius calc in case the up/ down is pressed.
         let forward = camera.eye - camera.target;
         let forward_mag = 10.0;
-        if !(self.is_look_right_pressed && self.is_look_left_pressed) {
+
+        let mut cam_movement = Vector3::new(0.0, 0.0, 0.0);
+        if self.is_look_up_pressed
+            || self.is_look_down_pressed
+            || self.is_look_left_pressed
+            || self.is_look_right_pressed
+        {
             if self.is_look_left_pressed {
-                camera.target = camera.eye - (forward + right * self.speed).normalize() * forward_mag;
+                cam_movement += forward + right
             }
             if self.is_look_right_pressed {
-                camera.target = camera.eye - (forward - right * self.speed).normalize() * forward_mag;
-            }
-        }
-        if !(self.is_look_up_pressed && self.is_look_down_pressed) {
-            if self.is_look_down_pressed {
-                camera.target = camera.eye - (forward + Vector3::new(0.0, 1.0, 0.0) * self.speed).normalize() * forward_mag;
+                cam_movement += forward - right
             }
             if self.is_look_up_pressed {
-                camera.target = camera.eye - (forward - Vector3::new(0.0, 1.0, 0.0) * self.speed).normalize() * forward_mag;
+                cam_movement += forward + up
             }
+            if self.is_look_down_pressed {
+                cam_movement += forward - up
+            }
+            if camera.target.y > 10.0 {
+                camera.target.y = 10.0;
+            }
+            if camera.target.y < -8.5 {
+                camera.target.y = -8.5;
+            }
+
+            camera.target = (camera.eye - (cam_movement * self.speed).normalize() * forward_mag);
         }
         if self.is_up_pressed {
             camera.eye.y += 0.25;
@@ -270,6 +297,7 @@ struct State {
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     depth_texture: Texture,
+    tick: u64,
 }
 
 impl State {
@@ -309,15 +337,26 @@ impl State {
         };
         surface.configure(&device, &config);
 
-        let depth_texture = texture::Texture::create_depth_texture(&device, &config, "depth_texture");
+        let depth_texture =
+            texture::Texture::create_depth_texture(&device, &config, "depth_texture");
 
         let diffuse_bytes = include_bytes!("assets/textures/textures.png");
-        let diffuse_texture =
-            texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "assets/textures/textures.png").unwrap();
+        let diffuse_texture = texture::Texture::from_bytes(
+            &device,
+            &queue,
+            diffuse_bytes,
+            "assets/textures/textures.png",
+        )
+        .unwrap();
 
         let sky_diffuse_bytes = include_bytes!("assets/textures/sky.png");
-        let sky_diffuse_texture =
-            texture::Texture::from_bytes(&device, &queue, sky_diffuse_bytes, "assets/textures/sky.png").unwrap();
+        let sky_diffuse_texture = texture::Texture::from_bytes(
+            &device,
+            &queue,
+            sky_diffuse_bytes,
+            "assets/textures/sky.png",
+        )
+        .unwrap();
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -464,7 +503,7 @@ impl State {
                 format: texture::Texture::DEPTH_FORMAT,
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::Less, // 1.
-                stencil: wgpu::StencilState::default(), // 2.
+                stencil: wgpu::StencilState::default(),     // 2.
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState {
@@ -510,7 +549,7 @@ impl State {
                 format: texture::Texture::DEPTH_FORMAT,
                 depth_write_enabled: false,
                 depth_compare: wgpu::CompareFunction::Less, // 1.
-                stencil: wgpu::StencilState::default(), // 2.
+                stencil: wgpu::StencilState::default(),     // 2.
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState {
@@ -522,11 +561,40 @@ impl State {
         });
 
         let mut chunk_manager = ChunkManager::new();
-        chunk_manager.add_chunk(Chunk::new_filled(Vector3::new(0, 0, 0), 1));
-        chunk_manager.add_chunk(Chunk::new_layered(Vector3::new(0, 1, 0), 1, 2, 3));
-        chunk_manager.add_chunk(Chunk::new_filled(Vector3::new(-1, 0, 0), 3));
-        chunk_manager.add_chunk(Chunk::new_filled(Vector3::new(-1, 1, 0), 4));
-        
+        //chunk_manager.add_chunk(Chunk::new_filled(Vector3::new(0, 0, 0), 1));
+        //chunk_manager.add_chunk(Chunk::new_layered(Vector3::new(0, 1, 0), 1, 2, 3));
+        //chunk_manager.add_chunk(Chunk::new_filled(Vector3::new(-1, 0, 0), 3));
+        //chunk_manager.add_chunk(Chunk::new_filled(Vector3::new(-1, 1, 0), 4));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(0, 0, 0), 1));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(0, 1, 0), 2));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(-1, 0, 0), 3));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(-1, 1, 0), 4));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(1, 0, 0), 1));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(1, 1, 0), 2));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(-1, 2, 0), 3));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(0, 2, 0), 4));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(1, 2, 0), 1));
+
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(0, 0, 1), 1));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(0, 1, 1), 2));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(-1, 0, 1), 3));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(-1, 1, 1), 4));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(1, 0, 1), 1));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(1, 1, 1), 2));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(-1, 2, 1), 3));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(0, 2, 1), 4));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(1, 2, 1), 1));
+
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(0, 0, 2), 1));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(0, 1, 2), 2));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(-1, 0, 2), 3));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(-1, 1, 2), 4));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(1, 0, 2), 1));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(1, 1, 2), 2));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(-1, 2, 2), 3));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(0, 2, 2), 4));
+        chunk_manager.add_chunk(Chunk::new_perlin(Point3::new(1, 2, 2), 1));
+
         let chunk_buffers = ChunkBuffers::new(&device, &chunk_manager);
 
         Self {
@@ -549,6 +617,7 @@ impl State {
             camera_bind_group,
             camera_uniform,
             depth_texture,
+            tick: 0,
         }
     }
 
@@ -561,14 +630,17 @@ impl State {
 
             self.camera.aspect = self.config.width as f32 / self.config.height as f32;
         }
-        self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
+        self.depth_texture =
+            texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
     }
 
-    fn input(&mut self, event: &WindowEvent) -> bool {
+    fn input(&mut self, event: &DeviceEvent) -> bool {
         self.camera_controller.process_events(event)
     }
 
     fn update(&mut self) {
+        self.tick += 1;
+
         self.camera_controller.update_camera(&mut self.camera);
         self.camera_uniform.update_view_proj(&self.camera);
         self.queue.write_buffer(
@@ -577,19 +649,25 @@ impl State {
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
 
-        let break_pos = Vector3::new(self.camera.eye.x as i32, self.camera.eye.y as i32, self.camera.eye.z as i32);
-        self.chunk_manager.set_block(break_pos, 0);
-        self.chunk_manager.set_block(break_pos + Vector3::new(0, 1, 0), 0);
-        self.chunk_manager.set_block(break_pos + Vector3::new(0, -1, 0), 0);
-        self.chunk_manager.set_block(break_pos + Vector3::new(1, 0, 0), 0);
-        self.chunk_manager.set_block(break_pos + Vector3::new(-1, 0, 0), 0);
-        self.chunk_manager.set_block(break_pos + Vector3::new(0, 0, 1), 0);
-        self.chunk_manager.set_block(break_pos + Vector3::new(0, 0, -1), 0);
-        let break_chunk_index = self.chunk_manager.get_pos_index(break_pos);
-        let break_chunk = self.chunk_manager.get_pos_chunk(break_pos);
-        if break_chunk_index.is_some() && break_chunk.is_some() {
-            self.chunk_buffers.update_chunk(&self.device, break_chunk_index.unwrap(), break_chunk.unwrap());
+        if (self.tick % 5) == 0 {
+            self.chunk_manager.update(math::pointi32(self.camera.eye), &mut self.chunk_buffers, &self.device);
         }
+
+        /*match raycaster::block_ray(&self.chunk_manager, self.camera.eye, self.camera.target, 0.1, 100.0) {
+            Some(hit) => {
+                self.chunk_manager.set_block(math::pointi32(hit.position), 0);
+                let break_chunk_index = self.chunk_manager.get_pos_index(math::to_vector(math::pointi32(hit.position)));
+                let break_chunk = self.chunk_manager.get_pos_chunk(math::pointi32(hit.position));
+                if break_chunk_index.is_some() && break_chunk.is_some() {
+                    self.chunk_buffers.update_chunk(
+                        &self.device,
+                        break_chunk_index.unwrap(),
+                        break_chunk.unwrap(),
+                    );
+                }
+            },
+            None => {},
+        };*/
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -605,7 +683,10 @@ impl State {
             });
 
         {
-            let (sky0, sky1, sky2) = sky::build(&self.device, Vector3::new(self.camera.eye.x, self.camera.eye.y, self.camera.eye.z));
+            let (sky0, sky1, sky2) = sky::build(
+                &self.device,
+                Vector3::new(self.camera.eye.x, self.camera.eye.y, self.camera.eye.z),
+            );
 
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -657,7 +738,10 @@ impl State {
 }
 
 fn main() {
-
+    match PERLIN.set(Perlin::new()) {
+        Ok(_) => {}
+        Err(types) => panic!("Failed to initialize perlin noise!")
+    }
     env_logger::init();
     block_types::init();
     
@@ -673,28 +757,29 @@ fn main() {
                 ref event,
                 window_id,
             } if window_id == window.id() => {
-                if !state.input(event) {
-                    match event {
-                        WindowEvent::CloseRequested
-                        | WindowEvent::KeyboardInput {
-                            input:
-                                KeyboardInput {
-                                    state: ElementState::Pressed,
-                                    virtual_keycode: Some(VirtualKeyCode::Escape),
-                                    ..
-                                },
-                            ..
-                        } => *control_flow = ControlFlow::Exit,
-                        WindowEvent::Resized(physical_size) => {
-                            state.resize(*physical_size);
-                        }
-                        WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                            // new_inner_size is &mut so w have to dereference it twice
-                            state.resize(**new_inner_size);
-                        }
-                        _ => {}
+                match event {
+                    WindowEvent::CloseRequested
+                    | WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                state: ElementState::Pressed,
+                                virtual_keycode: Some(VirtualKeyCode::Escape),
+                                ..
+                            },
+                        ..
+                    } => *control_flow = ControlFlow::Exit,
+                    WindowEvent::Resized(physical_size) => {
+                        state.resize(*physical_size);
                     }
+                    WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                        // new_inner_size is &mut so w have to dereference it twice
+                        state.resize(**new_inner_size);
+                    }
+                    _ => {}
                 }
+            }
+            Event::DeviceEvent { ref event, .. } => {
+                state.input(event);
             }
             Event::RedrawRequested(window_id) if window_id == window.id() => {
                 state.update();
