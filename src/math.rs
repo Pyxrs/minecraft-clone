@@ -5,6 +5,9 @@ use crate::chunk;
 pub fn to_point(pos: Vector3<i32>) -> Point3<i32> {
     Point3::new(pos.x, pos.y, pos.z)
 }
+pub fn to_pointf32(pos: Vector3<f32>) -> Point3<f32> {
+    Point3::new(pos.x, pos.y, pos.z)
+}
 pub fn to_vector(pos: Point3<i32>) -> Vector3<i32> {
     Vector3::new(pos.x, pos.y, pos.z)
 }
@@ -20,8 +23,14 @@ pub fn pointf32(pos: Point3<i32>) -> Point3<f32> {
 pub fn pointf64(pos: Point3<i32>) -> Point3<f64> {
     Point3::new(pos.x as f64, pos.y as f64, pos.z as f64)
 }
+pub fn pointf64f(pos: Point3<f32>) -> Point3<f64> {
+    Point3::new(pos.x as f64, pos.y as f64, pos.z as f64)
+}
 pub fn multiply(pos1: Point3<i32>, pos2: Point3<i32>) -> Point3<i32> {
     Point3::new(pos1.x * pos2.x, pos1.y * pos2.y, pos1.z * pos2.z)
+}
+pub fn multiplyf32(pos1: Vector3<f32>, pos2: Vector3<f32>) -> Vector3<f32> {
+    Vector3::new(pos1.x * pos2.x, pos1.y * pos2.y, pos1.z * pos2.z)
 }
 pub fn add(pos1: Point3<i32>, pos2: Point3<i32>) -> Point3<i32> {
     Point3::new(pos1.x + pos2.x, pos1.y + pos2.y, pos1.z + pos2.z)

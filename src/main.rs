@@ -13,7 +13,7 @@ use wgpu::util::DeviceExt;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
-    window::{Window, WindowBuilder},
+    window::{Window, WindowBuilder}, dpi::{PhysicalPosition, LogicalPosition},
 };
 use noise::{NoiseFn, Perlin};
 
@@ -24,6 +24,7 @@ mod direction;
 mod render;
 mod raycaster;
 mod math;
+mod camera;
 
 pub const RENDER_DISTANCE: i32 = 2;
 pub static PERLIN: OnceCell<Perlin> = OnceCell::new();
@@ -64,217 +65,6 @@ impl Vertex {
     }
 }
 
-#[rustfmt::skip]
-pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
-    1.0, 0.0, 0.0, 0.0,
-    0.0, 1.0, 0.0, 0.0,
-    0.0, 0.0, 0.5, 0.0,
-    0.0, 0.0, 0.5, 1.0,
-);
-
-struct Camera {
-    eye: cgmath::Point3<f32>,
-    target: cgmath::Point3<f32>,
-    up: cgmath::Vector3<f32>,
-    aspect: f32,
-    fovy: f32,
-    znear: f32,
-    zfar: f32,
-}
-
-impl Camera {
-    fn build_view_projection_matrix(&self) -> cgmath::Matrix4<f32> {
-        let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
-        let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
-        proj * view
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct CameraUniform {
-    view_proj: [[f32; 4]; 4],
-}
-
-impl CameraUniform {
-    fn new() -> Self {
-        use cgmath::SquareMatrix;
-        Self {
-            view_proj: cgmath::Matrix4::identity().into(),
-        }
-    }
-
-    fn update_view_proj(&mut self, camera: &Camera) {
-        self.view_proj = (OPENGL_TO_WGPU_MATRIX * camera.build_view_projection_matrix()).into();
-    }
-}
-struct CameraController {
-    speed: f32,
-    is_up_pressed: bool,
-    is_down_pressed: bool,
-    is_left_pressed: bool,
-    is_right_pressed: bool,
-    is_forward_pressed: bool,
-    is_backward_pressed: bool,
-    is_look_left_pressed: bool,
-    is_look_right_pressed: bool,
-    is_look_up_pressed: bool,
-    is_look_down_pressed: bool,
-    mouse_x: f64,
-    mouse_y: f64,
-}
-
-impl CameraController {
-    fn new(speed: f32) -> Self {
-        Self {
-            speed,
-            is_up_pressed: false,
-            is_down_pressed: false,
-            is_left_pressed: false,
-            is_right_pressed: false,
-            is_forward_pressed: false,
-            is_backward_pressed: false,
-            is_look_left_pressed: false,
-            is_look_right_pressed: false,
-            is_look_up_pressed: false,
-            is_look_down_pressed: false,
-            mouse_x: 0.0,
-            mouse_y: 0.0,
-        }
-    }
-
-    fn process_events(&mut self, event: &DeviceEvent) -> bool {
-        match event {
-            DeviceEvent::Key(KeyboardInput {
-                virtual_keycode: Some(key),
-                state,
-                ..
-            }) => {
-                let is_pressed = *state == ElementState::Pressed;
-                match key {
-                    VirtualKeyCode::W => {
-                        self.is_forward_pressed = is_pressed;
-                        true
-                    }
-                    VirtualKeyCode::A => {
-                        self.is_left_pressed = is_pressed;
-                        true
-                    }
-                    VirtualKeyCode::S => {
-                        self.is_backward_pressed = is_pressed;
-                        true
-                    }
-                    VirtualKeyCode::D => {
-                        self.is_right_pressed = is_pressed;
-                        true
-                    }
-                    VirtualKeyCode::Space => {
-                        self.is_up_pressed = is_pressed;
-                        true
-                    }
-                    VirtualKeyCode::LShift => {
-                        self.is_down_pressed = is_pressed;
-                        true
-                    }
-
-                    VirtualKeyCode::Up => {
-                        self.is_look_up_pressed = is_pressed;
-                        true
-                    }
-                    VirtualKeyCode::Left => {
-                        self.is_look_left_pressed = is_pressed;
-                        true
-                    }
-                    VirtualKeyCode::Down => {
-                        self.is_look_down_pressed = is_pressed;
-                        true
-                    }
-                    VirtualKeyCode::Right => {
-                        self.is_look_right_pressed = is_pressed;
-                        true
-                    }
-                    _ => false,
-                }
-            }
-            DeviceEvent::MouseMotion { delta } => {
-                self.mouse_x = delta.0;
-                self.mouse_y = delta.1;
-                true
-            }
-            _ => false,
-        }
-    }
-
-    fn update_camera(&self, camera: &mut Camera) {
-        use cgmath::InnerSpace;
-        let forward = camera.target - camera.eye;
-        let forward_norm = forward.normalize();
-        let right = forward_norm.cross(camera.up);
-        let up = forward_norm.cross(right).normalize();
-
-        let aligned_forward_norm = Vector3::new(forward_norm.x, 0.0, forward_norm.z);
-
-        // Prevents glitching when camera gets too close to the
-        // center of the scene.
-        if self.is_forward_pressed {
-            camera.eye += aligned_forward_norm * self.speed;
-            camera.target += aligned_forward_norm * self.speed;
-        }
-        if self.is_backward_pressed {
-            camera.eye -= aligned_forward_norm * self.speed;
-            camera.target -= aligned_forward_norm * self.speed;
-        }
-        if self.is_left_pressed {
-            camera.eye -= right * self.speed;
-            camera.target -= right * self.speed;
-        }
-        if self.is_right_pressed {
-            camera.eye += right * self.speed;
-            camera.target += right * self.speed;
-        }
-
-        // Redo radius calc in case the up/ down is pressed.
-        let forward = camera.eye - camera.target;
-        let forward_mag = 10.0;
-
-        let mut cam_movement = Vector3::new(0.0, 0.0, 0.0);
-        if self.is_look_up_pressed
-            || self.is_look_down_pressed
-            || self.is_look_left_pressed
-            || self.is_look_right_pressed
-        {
-            if self.is_look_left_pressed {
-                cam_movement += forward + right
-            }
-            if self.is_look_right_pressed {
-                cam_movement += forward - right
-            }
-            if self.is_look_up_pressed {
-                cam_movement += forward + up
-            }
-            if self.is_look_down_pressed {
-                cam_movement += forward - up
-            }
-            if camera.target.y > 10.0 {
-                camera.target.y = 10.0;
-            }
-            if camera.target.y < -8.5 {
-                camera.target.y = -8.5;
-            }
-
-            camera.target = (camera.eye - (cam_movement * self.speed).normalize() * forward_mag);
-        }
-        if self.is_up_pressed {
-            camera.eye.y += 0.25;
-            camera.target.y += 0.25;
-        }
-        if self.is_down_pressed {
-            camera.eye.y -= 0.25;
-            camera.target.y -= 0.25;
-        }
-    }
-}
-
 struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -291,13 +81,14 @@ struct State {
     #[allow(dead_code)]
     sky_diffuse_texture: texture::Texture,
     sky_diffuse_bind_group: wgpu::BindGroup,
-    camera: Camera,
-    camera_controller: CameraController,
-    camera_uniform: CameraUniform,
+    camera: camera::Camera,
+    camera_controller: camera::CameraController,
+    camera_uniform: camera::CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     depth_texture: Texture,
     tick: u64,
+    pause: bool,
 }
 
 impl State {
@@ -411,18 +202,20 @@ impl State {
             label: Some("diffuse_bind_group"),
         });
 
-        let camera = Camera {
-            eye: (0.0, 1.0, 2.0).into(),
-            target: (0.0, 1.0, 0.0).into(),
+        let camera = camera::Camera {
+            pos: (0.0, 1.0, 2.0).into(),
             up: cgmath::Vector3::unit_y(),
             aspect: config.width as f32 / config.height as f32,
             fovy: 70.0,
             znear: 0.1,
             zfar: 100.0,
+            pitch: 0.0,
+            yaw: 0.0,
+            resolution: window.inner_size(),
         };
-        let camera_controller = CameraController::new(0.2);
+        let camera_controller = camera::CameraController::new(0.2);
 
-        let mut camera_uniform = CameraUniform::new();
+        let mut camera_uniform = camera::CameraUniform::new();
         camera_uniform.update_view_proj(&camera);
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -618,10 +411,12 @@ impl State {
             camera_uniform,
             depth_texture,
             tick: 0,
+            pause: false
         }
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        self.camera.resolution = new_size;
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
             self.config.width = new_size.width;
@@ -634,8 +429,8 @@ impl State {
             texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
     }
 
-    fn input(&mut self, event: &DeviceEvent) -> bool {
-        self.camera_controller.process_events(event)
+    fn input(&mut self, device_event: Option<&DeviceEvent>, window_event: Option<&WindowEvent>) -> bool {
+        self.camera_controller.process_events(device_event, window_event)
     }
 
     fn update(&mut self) {
@@ -650,7 +445,7 @@ impl State {
         );
 
         if (self.tick % 5) == 0 {
-            self.chunk_manager.update(math::pointi32(self.camera.eye), &mut self.chunk_buffers, &self.device);
+            self.chunk_manager.update(math::pointi32(self.camera.pos), &mut self.chunk_buffers, &self.device);
         }
 
         /*match raycaster::block_ray(&self.chunk_manager, self.camera.eye, self.camera.target, 0.1, 100.0) {
@@ -685,7 +480,7 @@ impl State {
         {
             let (sky0, sky1, sky2) = sky::build(
                 &self.device,
-                Vector3::new(self.camera.eye.x, self.camera.eye.y, self.camera.eye.z),
+                Vector3::new(self.camera.pos.x, self.camera.pos.y, self.camera.pos.z),
             );
 
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -748,18 +543,28 @@ fn main() {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
+    let cursor_pos = PhysicalPosition::new(100, 100);
+    
     // State::new uses async code, so we're going to wait for it to finish
     let mut state = pollster::block_on(State::new(&window));
 
     event_loop.run(move |event, _, control_flow| {
+        if !state.pause {
+            window.set_cursor_grab(true).unwrap();
+            window.set_cursor_visible(false);
+        } else {
+            window.set_cursor_grab(false).unwrap();
+            window.set_cursor_visible(true);
+        }
         match event {
             Event::WindowEvent {
                 ref event,
                 window_id,
             } if window_id == window.id() => {
+                state.input(None, Some(&event));
                 match event {
-                    WindowEvent::CloseRequested
-                    | WindowEvent::KeyboardInput {
+                    WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+                    WindowEvent::KeyboardInput {
                         input:
                             KeyboardInput {
                                 state: ElementState::Pressed,
@@ -767,7 +572,9 @@ fn main() {
                                 ..
                             },
                         ..
-                    } => *control_flow = ControlFlow::Exit,
+                    } => {
+                        state.pause = !state.pause;
+                    }
                     WindowEvent::Resized(physical_size) => {
                         state.resize(*physical_size);
                     }
@@ -779,7 +586,7 @@ fn main() {
                 }
             }
             Event::DeviceEvent { ref event, .. } => {
-                state.input(event);
+                state.input(Some(&event), None);
             }
             Event::RedrawRequested(window_id) if window_id == window.id() => {
                 state.update();

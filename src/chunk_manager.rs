@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use cgmath::{Vector3, Point3};
 use rand::{Rng, prelude::ThreadRng};
 
