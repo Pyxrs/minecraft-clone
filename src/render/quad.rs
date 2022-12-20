@@ -17,7 +17,7 @@ impl Quad {
 }
 
 pub fn block_quad(
-    id: u16,
+    id: u32,
     index: u32,
     direction: Direction,
     position: Vector3<f32>,

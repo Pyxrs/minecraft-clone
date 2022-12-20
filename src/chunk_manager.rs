@@ -16,7 +16,8 @@ impl ChunkManager {
         }
     }
 
-    pub fn update(&mut self, player_pos: Point3<i32>, chunk_buffers: &mut ChunkBuffers, device: &wgpu::Device) {
+    pub fn update(&mut self, player_pos: &Point3<f32>, chunk_buffers: &mut ChunkBuffers, device: &wgpu::Device) {
+        let player_pos = Point3::new(player_pos.x.round() as i32, player_pos.y.round() as i32, player_pos.z.round() as i32);
         for posx in (-RENDER_DISTANCE + math::get_chunk_position(player_pos).x)..(RENDER_DISTANCE + math::get_chunk_position(player_pos).x) {
             for posy in (-RENDER_DISTANCE + math::get_chunk_position(player_pos).y)..(RENDER_DISTANCE + math::get_chunk_position(player_pos).y) {
                 for posz in (-RENDER_DISTANCE + math::get_chunk_position(player_pos).z)..(RENDER_DISTANCE + math::get_chunk_position(player_pos).z) {
@@ -27,7 +28,7 @@ impl ChunkManager {
                     }
                 }
             }
-        }   
+        }
     }
     
     pub fn add_chunk(&mut self, chunk: Chunk) -> usize {
@@ -57,6 +58,7 @@ impl ChunkManager {
         }
         None
     }
+
     pub fn get_pos_chunk_mut(&mut self, pos: Point3<i32>) -> Option<&mut Chunk> {
         for chunk in &mut self.chunks {
             if pos.x < chunk.position.x + (chunk::SIZE / 2) as i32 && pos.x >= chunk.position.x - (chunk::SIZE / 2) as i32 &&
@@ -96,7 +98,7 @@ impl ChunkManager {
         self.chunks.len()
     }
 
-    pub fn set_block(&mut self, pos: Point3<i32>, block: u16) {
+    pub fn set_block(&mut self, pos: Point3<i32>, block: u32) {
         let chunk = self.get_pos_chunk_mut(pos);
         match chunk {
             Some(_) => {
@@ -106,7 +108,7 @@ impl ChunkManager {
         }
     }
 
-    pub fn get_block(&self, pos: Point3<i32>) -> u16 {
+    pub fn get_block(&self, pos: Point3<i32>) -> u32 {
         let chunk = self.get_pos_chunk(pos);
         match chunk {
             Some(_) => {

@@ -10,14 +10,14 @@ pub static BLOCK_TYPES: OnceCell<Vec<Option<Type>>> = OnceCell::new();
 #[derive(Deserialize, Debug, Clone)]
 pub struct Type {
     pub name: String,
-    pub id: u16,
+    pub id: u32,
     textures: Table,
     pub states: Array
 }
 
 impl Type {
-    pub fn get_texture(&self, direction: Direction) -> u16 {
-        self.textures.get(&direction.get_string()).unwrap().as_integer().unwrap() as u16
+    pub fn get_texture(&self, direction: Direction) -> u32 {
+        self.textures.get(&direction.get_string()).unwrap().as_integer().unwrap() as u32
     }
 }
 
@@ -39,6 +39,6 @@ pub fn init() {
     }
 }
 
-pub fn get(id: u16) -> &'static Type {
+pub fn get(id: u32) -> &'static Type {
     BLOCK_TYPES.get().expect("You tried to get a block type before the block files have been deserialized!").get(id as usize).expect("Block type does not exist!").as_ref().expect("Out of bounds!")
 }

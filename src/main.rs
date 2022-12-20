@@ -5,24 +5,23 @@ use crate::render::*;
 use cgmath::{Point3, Vector3};
 use chunk::Chunk;
 use chunk_manager::ChunkManager;
-use direction::Direction;
+use log::LevelFilter;
 use once_cell::sync::OnceCell;
-use rand::prelude::ThreadRng;
 use render::texture::Texture;
+use simple_logger::SimpleLogger;
 use wgpu::util::DeviceExt;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
-    window::{Window, WindowBuilder}, dpi::{PhysicalPosition, LogicalPosition},
+    window::{Window, WindowBuilder, CursorGrabMode},
 };
-use noise::{NoiseFn, Perlin};
+use noise::Perlin;
 
 mod block_types;
 mod chunk;
 mod chunk_manager;
 mod direction;
 mod render;
-mod raycaster;
 mod math;
 mod camera;
 
@@ -121,10 +120,11 @@ impl State {
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface.get_preferred_format(&adapter).unwrap(),
+            format: surface.get_supported_formats(&adapter)[0],
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::Fifo,
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
         };
         surface.configure(&device, &config);
 
@@ -137,8 +137,7 @@ impl State {
             &queue,
             diffuse_bytes,
             "assets/textures/textures.png",
-        )
-        .unwrap();
+        );
 
         let sky_diffuse_bytes = include_bytes!("assets/textures/sky.png");
         let sky_diffuse_texture = texture::Texture::from_bytes(
@@ -146,8 +145,7 @@ impl State {
             &queue,
             sky_diffuse_bytes,
             "assets/textures/sky.png",
-        )
-        .unwrap();
+        );
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -248,7 +246,7 @@ impl State {
             label: Some("camera_bind_group"),
         });
 
-        let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("assets/shaders/shader.wgsl").into()),
         });
@@ -271,14 +269,14 @@ impl State {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
-                targets: &[wgpu::ColorTargetState {
+                targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
                     blend: Some(wgpu::BlendState {
                         color: wgpu::BlendComponent::REPLACE,
                         alpha: wgpu::BlendComponent::REPLACE,
                     }),
                     write_mask: wgpu::ColorWrites::ALL,
-                }],
+                })],
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -320,14 +318,14 @@ impl State {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "fs_main",
-                targets: &[wgpu::ColorTargetState {
+                targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
                     blend: Some(wgpu::BlendState {
                         color: wgpu::BlendComponent::REPLACE,
                         alpha: wgpu::BlendComponent::REPLACE,
                     }),
                     write_mask: wgpu::ColorWrites::ALL,
-                }],
+                })],
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -445,7 +443,7 @@ impl State {
         );
 
         if (self.tick % 5) == 0 {
-            self.chunk_manager.update(math::pointi32(self.camera.pos), &mut self.chunk_buffers, &self.device);
+            self.chunk_manager.update(&self.camera.pos, &mut self.chunk_buffers, &self.device);
         }
 
         /*match raycaster::block_ray(&self.chunk_manager, self.camera.eye, self.camera.target, 0.1, 100.0) {
@@ -485,19 +483,19 @@ impl State {
 
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
-                color_attachments: &[wgpu::RenderPassColorAttachment {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
+                            r: 0.3,
+                            g: 0.3,
                             b: 0.3,
                             a: 1.0,
                         }),
                         store: true,
                     },
-                }],
+                })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_texture.view,
                     depth_ops: Some(wgpu::Operations {
@@ -533,27 +531,28 @@ impl State {
 }
 
 fn main() {
-    match PERLIN.set(Perlin::new()) {
-        Ok(_) => {}
-        Err(types) => panic!("Failed to initialize perlin noise!")
-    }
-    env_logger::init();
+    SimpleLogger::new()
+            .with_module_level("wgpu_hal", LevelFilter::Error)
+            .with_module_level("wgpu_core", LevelFilter::Error)
+            .with_module_level("naga", LevelFilter::Error)
+            .with_module_level("winit", LevelFilter::Error)
+            .with_level(LevelFilter::Trace).init().unwrap();
+    
+    PERLIN.set(Perlin::new(0)).expect("Failed to initialize perlin noise!");
     block_types::init();
     
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
-
-    let cursor_pos = PhysicalPosition::new(100, 100);
     
     // State::new uses async code, so we're going to wait for it to finish
     let mut state = pollster::block_on(State::new(&window));
 
     event_loop.run(move |event, _, control_flow| {
         if !state.pause {
-            window.set_cursor_grab(true).unwrap();
+            window.set_cursor_grab(CursorGrabMode::Confined).or_else(|_e| window.set_cursor_grab(CursorGrabMode::Locked)).unwrap();
             window.set_cursor_visible(false);
         } else {
-            window.set_cursor_grab(false).unwrap();
+            window.set_cursor_grab(CursorGrabMode::None).unwrap();
             window.set_cursor_visible(true);
         }
         match event {
